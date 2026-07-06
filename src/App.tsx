@@ -934,6 +934,60 @@ function App() {
           </div>
         </div>
 
+        <div className="sidebar-ai">
+          {settingsOpen ? (
+            <section className="settings-panel" aria-label="AI API settings">
+              <div className="settings-head">
+                <div>
+                  <span className="section-label">AI Keys</span>
+                  <strong>Session only</strong>
+                </div>
+                <button type="button" className="icon-button compact-button" onClick={() => setSettingsOpen(false)}>
+                  Close
+                </button>
+              </div>
+
+              <label className="settings-field">
+                <span>fal.ai API key</span>
+                <input
+                  type="password"
+                  value={falKey}
+                  placeholder="fal key"
+                  onChange={(event) => setFalKey(event.target.value)}
+                />
+              </label>
+
+              <label className="settings-field">
+                <span>Wiro API key</span>
+                <input
+                  type="password"
+                  value={wiroKey}
+                  placeholder="wiro key"
+                  onChange={(event) => setWiroKey(event.target.value)}
+                />
+              </label>
+
+              <label className="settings-field">
+                <span>Wiro model slug</span>
+                <input
+                  type="text"
+                  value={wiroModel}
+                  placeholder="openai/gpt-5.5"
+                  onChange={(event) => setWiroModel(event.target.value)}
+                />
+              </label>
+
+              <p className="privacy-note">
+                No files or keys are stored by us. Keys live only in this browser session.
+              </p>
+            </section>
+          ) : null}
+          <button type="button" className="sidebar-ai-button" onClick={() => setSettingsOpen((current) => !current)}>
+            <span>AI</span>
+            <strong>{falKey || wiroKey ? 'Connected' : 'Add keys'}</strong>
+          </button>
+        </div>
+
         <div className="sidebar-footer">
           <span>v2.4.0 Batch Mode</span>
           <button type="button" className="ghost-action" onClick={handleClear} disabled={!assets.length}>
@@ -1049,6 +1103,12 @@ function App() {
           </div>
           <div className="status-group">
             <span>{status}</span>
+          </div>
+          <div className="status-group credit-group">
+            <span>Made with &lt;3 by hasaneyldrm</span>
+            <a href="https://github.com/hasaneyldrm/lottie-viewer" target="_blank" rel="noreferrer">
+              Open source
+            </a>
           </div>
         </footer>
       </main>
@@ -1229,59 +1289,6 @@ function App() {
           </section>
         </div>
       ) : null}
-
-      <div className="ai-dock">
-        {settingsOpen ? (
-          <section className="settings-panel" aria-label="AI API settings">
-            <div className="settings-head">
-              <div>
-                <span className="section-label">AI Keys</span>
-                <strong>Session only</strong>
-              </div>
-              <button type="button" className="icon-button" onClick={() => setSettingsOpen(false)}>
-                Close
-              </button>
-            </div>
-
-            <label className="settings-field">
-              <span>fal.ai API key</span>
-              <input
-                type="password"
-                value={falKey}
-                placeholder="fal key"
-                onChange={(event) => setFalKey(event.target.value)}
-              />
-            </label>
-
-            <label className="settings-field">
-              <span>Wiro API key</span>
-              <input
-                type="password"
-                value={wiroKey}
-                placeholder="wiro key"
-                onChange={(event) => setWiroKey(event.target.value)}
-              />
-            </label>
-
-            <label className="settings-field">
-              <span>Wiro model slug</span>
-              <input
-                type="text"
-                value={wiroModel}
-                placeholder="openai/gpt-5.5"
-                onChange={(event) => setWiroModel(event.target.value)}
-              />
-            </label>
-
-            <p className="privacy-note">
-              Public GitHub Pages app. We do not keep keys or files. Browser session clears when the tab/session ends.
-            </p>
-          </section>
-        ) : null}
-        <button type="button" className="ai-dock-button" onClick={() => setSettingsOpen((current) => !current)}>
-          AI
-        </button>
-      </div>
 
       <div ref={exportCanvasHostRef} className="export-host" aria-hidden="true" />
     </div>

@@ -60,7 +60,7 @@
 .play-chip,
 .provider-toggle button,
 .history-row,
-.ai-dock-button {
+.sidebar-ai-button {
   appearance: none;
   border: 0;
   font: inherit;
@@ -74,7 +74,7 @@
 .play-chip,
 .provider-toggle button,
 .history-row,
-.ai-dock-button {
+.sidebar-ai-button {
   cursor: pointer;
   transition:
     background-color 140ms ease,
@@ -116,7 +116,7 @@
 .play-chip:hover,
 .provider-toggle button:hover,
 .history-row:hover,
-.ai-dock-button:hover {
+.sidebar-ai-button:hover {
   transform: translateY(-1px);
 }
 
@@ -261,6 +261,39 @@
   border-top: 1px solid #3c494e;
   background: #060e20;
   font-size: 0.73rem;
+}
+
+.sidebar-ai {
+  display: grid;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid #3c494e;
+  background: #0b1326;
+}
+
+.sidebar-ai-button {
+  width: 100%;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  background: #171f33;
+  color: #dae2fd;
+  border: 1px solid #3c494e;
+  border-radius: 8px;
+}
+
+.sidebar-ai-button span {
+  color: #47d6ff;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.sidebar-ai-button strong {
+  font-size: 0.72rem;
+  color: #859399;
 }
 
 .ghost-action,
@@ -549,6 +582,19 @@
   font-size: 0.72rem;
 }
 
+.status-bar a {
+  color: #47d6ff;
+  text-decoration: none;
+}
+
+.status-bar a:hover {
+  text-decoration: underline;
+}
+
+.credit-group {
+  margin-left: auto;
+}
+
 .status-live::before {
   content: '';
   display: inline-block;
@@ -805,36 +851,14 @@
   color: #859399;
 }
 
-.ai-dock {
-  position: fixed;
-  right: 18px;
-  bottom: 18px;
-  z-index: 120;
-  display: grid;
-  justify-items: end;
-  gap: 10px;
-}
-
-.ai-dock-button {
-  width: 52px;
-  height: 52px;
-  border-radius: 999px;
-  background: #00d2ff;
-  color: #003543;
-  border: 1px solid #47d6ff;
-  box-shadow: 0 14px 40px rgba(0, 210, 255, 0.22);
-  font-weight: 900;
-}
-
 .settings-panel {
-  width: min(360px, calc(100vw - 32px));
+  width: 100%;
   display: grid;
-  gap: 12px;
-  padding: 14px;
+  gap: 10px;
+  padding: 12px;
   background: #060e20;
   border: 1px solid #3c494e;
-  border-radius: 12px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+  border-radius: 8px;
 }
 
 .settings-head {
@@ -853,6 +877,12 @@
   gap: 6px;
   color: #bbc9cf;
   font-size: 0.78rem;
+}
+
+.compact-button {
+  min-height: 30px;
+  padding: 0 9px;
+  font-size: 0.72rem;
 }
 
 .export-host {
@@ -959,5 +989,9 @@
   .detail-stage {
     min-height: 280px;
     padding: 14px;
+  }
+
+  .credit-group {
+    margin-left: 0;
   }
 }
