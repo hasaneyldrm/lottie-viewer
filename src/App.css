@@ -268,12 +268,121 @@ h2 {
 
 .gallery-shell {
   padding-top: 6px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.7fr);
+  gap: 16px;
+  align-items: start;
 }
 
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 20px;
+}
+
+.detail-panel {
+  position: sticky;
+  top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid #dfe4ea;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 14px;
+  box-shadow: 0 10px 24px rgba(25, 33, 42, 0.05);
+}
+
+.detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detail-kicker {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: #77808a;
+}
+
+.detail-meta {
+  margin: 8px 0 0;
+  color: #68707a;
+  line-height: 1.45;
+  font-size: 0.92rem;
+}
+
+.detail-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.detail-stage {
+  min-height: 360px;
+  border: 1px solid #d8dde3;
+  border-radius: 16px;
+  background: #fff;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+
+.detail-preview {
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+}
+
+.detail-preview svg {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.detail-empty {
+  width: 100%;
+  min-height: 360px;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  text-align: center;
+  color: #68707a;
+}
+
+.detail-info {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.detail-info div {
+  border: 1px solid #d8dde3;
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(244, 244, 242, 0.9);
+}
+
+.detail-info span {
+  display: block;
+  font-size: 0.72rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: #77808a;
+}
+
+.detail-info strong {
+  display: block;
+  margin-top: 8px;
+  color: #1a1a1a;
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
 }
 
 .asset-card {
@@ -431,6 +540,14 @@ h2 {
   .upload-stats {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
+
+  .gallery-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-panel {
+    position: static;
+  }
 }
 
 @media (max-width: 760px) {
@@ -449,6 +566,16 @@ h2 {
 
   .upload-stats {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .detail-stage,
+  .detail-preview,
+  .detail-empty {
+    min-height: 280px;
+  }
+
+  .detail-info {
+    grid-template-columns: 1fr;
   }
 
   .select-field,

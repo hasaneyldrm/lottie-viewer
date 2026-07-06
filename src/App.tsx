@@ -61,6 +61,18 @@ function getAssetStats(data: LottieData) {
   return { frameRate, frames, duration, width, height }
 }
 
+function downloadFile(file: File) {
+  const url = URL.createObjectURL(file)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = file.name
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
 async function readDroppedFiles(items: DataTransferItemList, files: FileList) {
   const itemArray = Array.from(items ?? [])
 
@@ -112,7 +124,7 @@ async function readDroppedFiles(items: DataTransferItemList, files: FileList) {
   return Array.from(files ?? [])
 }
 
-function Thumbnail({ data }: { data: LottieData }) {
+function Thumbnail({ data, autoplay }: { data: LottieData; autoplay: boolean }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const animationRef = useRef<AnimationItem | null>(null)
   const lottieRef = useRef<LottieModule | null>(null)
@@ -134,7 +146,7 @@ function Thumbnail({ data }: { data: LottieData }) {
       animationRef.current = module.default.loadAnimation({
         container: host,
         renderer: 'svg',
-        loop: false,
+        loop: true,
         autoplay: false,
         animationData: data,
         rendererSettings: {
@@ -155,7 +167,67 @@ function Thumbnail({ data }: { data: LottieData }) {
     }
   }, [data])
 
+  useEffect(() => {
+    const animation = animationRef.current
+    if (!animation) return
+    if (autoplay) {
+      animation.goToAndPlay(0, true)
+    } else {
+      animation.goToAndStop(0, true)
+    }
+  }, [autoplay])
+
   return <div ref={hostRef} className="thumb-host" aria-hidden="true" />
+}
+
+function DetailPreview({ asset }: { asset: AssetRecord }) {
+  const hostRef = useRef<HTMLDivElement | null>(null)
+  const animationRef = useRef<AnimationItem | null>(null)
+  const lottieRef = useRef<LottieModule | null>(null)
+
+  useEffect(() => {
+    const host = hostRef.current
+    let cancelled = false
+
+    if (!host || asset.status !== 'ready' || !asset.data) return
+
+    const mount = async () => {
+      const module = lottieRef.current ?? (await import('lottie-web'))
+      if (cancelled || !hostRef.current) return
+
+      lottieRef.current = module
+      host.innerHTML = ''
+      animationRef.current?.destroy()
+
+      animationRef.current = module.default.loadAnimation({
+        container: host,
+        renderer: 'svg',
+        loop: true,
+        autoplay: true,
+        animationData: asset.data,
+        rendererSettings: {
+          preserveAspectRatio: 'xMidYMid meet',
+          progressiveLoad: true,
+        },
+      })
+    }
+
+    void mount()
+
+    return () => {
+      cancelled = true
+      animationRef.current?.destroy()
+      animationRef.current = null
+    }
+  }, [asset])
+
+  return asset.status === 'ready' && asset.data ? (
+    <div ref={hostRef} className="detail-preview" aria-hidden="true" />
+  ) : (
+    <div className="detail-empty">
+      <strong>{asset.error ?? 'Preview unavailable'}</strong>
+    </div>
+  )
 }
 
 function App() {
@@ -167,6 +239,7 @@ function App() {
   const [dragging, setDragging] = useState(false)
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState('JSON dosyalarını bırak.')
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   const readyCount = useMemo(() => assets.filter((asset) => asset.status === 'ready').length, [assets])
@@ -299,11 +372,13 @@ function App() {
     setSearch('')
     setSortMode('featured')
     setTab('all')
+    setHoveredId(null)
     setStatus('Liste temizlendi.')
   }
 
   const activeAsset = assets.find((asset) => asset.id === activeId) ?? filteredAssets[0] ?? null
   const totalCount = assets.length
+  const detailsAsset = activeAsset ?? filteredAssets[0] ?? null
 
   return (
     <div
@@ -430,20 +505,22 @@ function App() {
           <div className="card-grid" aria-label="Loaded Lottie assets">
             {filteredAssets.map((asset) => {
               const active = asset.id === activeAsset?.id
-              return (
-                <button
-                  type="button"
-                  key={asset.id}
-                  className={`asset-card ${active ? 'is-active' : ''}`}
-                  onClick={() => setActiveId(asset.id)}
-                >
-                  <div className="asset-preview">
-                    {asset.status === 'ready' && asset.data ? (
-                      <Thumbnail data={asset.data} />
-                    ) : (
-                      <div className="error-preview">
-                        <span>!</span>
-                        <strong>Invalid JSON</strong>
+                return (
+                  <button
+                    type="button"
+                    key={asset.id}
+                    className={`asset-card ${active ? 'is-active' : ''}`}
+                    onClick={() => setActiveId(asset.id)}
+                    onMouseEnter={() => setHoveredId(asset.id)}
+                    onMouseLeave={() => setHoveredId((current) => (current === asset.id ? null : current))}
+                  >
+                    <div className="asset-preview">
+                      {asset.status === 'ready' && asset.data ? (
+                        <Thumbnail data={asset.data} autoplay={hoveredId === asset.id} />
+                      ) : (
+                        <div className="error-preview">
+                          <span>!</span>
+                          <strong>Invalid JSON</strong>
                       </div>
                     )}
                   </div>
@@ -483,6 +560,47 @@ function App() {
           </div>
         )}
       </main>
+
+      {detailsAsset ? (
+        <aside className="detail-panel" aria-label="Selected asset details">
+          <div className="detail-head">
+            <div>
+              <p className="detail-kicker">Detail</p>
+              <h2>{detailsAsset.name}</h2>
+              <p className="detail-meta">
+                {detailsAsset.status === 'ready'
+                  ? `${detailsAsset.width}x${detailsAsset.height} · ${detailsAsset.frames} frames · ${formatDuration(detailsAsset.duration ?? 0)}`
+                  : detailsAsset.error ?? 'Parse failed'}
+              </p>
+            </div>
+
+            <div className="detail-actions">
+              <button type="button" className="button" onClick={() => downloadFile(detailsAsset.file)}>
+                Download JSON
+              </button>
+            </div>
+          </div>
+
+          <div className="detail-stage">
+            <DetailPreview asset={detailsAsset} />
+          </div>
+
+          <div className="detail-info">
+            <div>
+              <span>File</span>
+              <strong>{detailsAsset.file.name}</strong>
+            </div>
+            <div>
+              <span>Size</span>
+              <strong>{formatBytes(detailsAsset.size)}</strong>
+            </div>
+            <div>
+              <span>Status</span>
+              <strong>{detailsAsset.status}</strong>
+            </div>
+          </div>
+        </aside>
+      ) : null}
     </div>
   )
 }
