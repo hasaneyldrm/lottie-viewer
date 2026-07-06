@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import type { AnimationItem } from 'lottie-web'
 import { FFmpeg } from '@ffmpeg/ffmpeg'
-import { fetchFile, toBlobURL } from '@ffmpeg/util'
+import { toBlobURL } from '@ffmpeg/util'
 import './App.css'
 
 type LottieData = Record<string, unknown> & {
@@ -95,6 +95,17 @@ function safeFileName(name: string) {
 function nextFrame() {
   return new Promise<void>((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+}
+
+function waitForAnimationEvent(animation: AnimationItem, eventName: 'DOMLoaded' | 'complete') {
+  return new Promise<void>((resolve) => {
+    const handler = () => {
+      animation.removeEventListener(eventName, handler)
+      resolve()
+    }
+
+    animation.addEventListener(eventName, handler)
   })
 }
 
@@ -505,6 +516,8 @@ function App() {
         },
       })
 
+      await waitForAnimationEvent(frameAnimation, 'DOMLoaded')
+
       const totalFrames = Math.max(1, asset.frames ?? 1)
       const fps = Math.max(1, Math.round(asset.frameRate ?? 30))
 
@@ -519,7 +532,7 @@ function App() {
 
         const blob = await canvasToBlob(canvas)
         const frameName = `${fileStem}-${runId}-${String(index).padStart(5, '0')}.png`
-        await ffmpeg.writeFile(frameName, await fetchFile(blob))
+        await ffmpeg.writeFile(frameName, new Uint8Array(await blob.arrayBuffer()))
         setExportProgress(Math.round(((index + 1) / totalFrames) * 100))
       }
 
@@ -570,7 +583,8 @@ function App() {
       setStatus('MP4 exported.')
       setDetailOpen(true)
     } catch (error) {
-      setExportMessage(error instanceof Error ? error.message : 'MP4 export failed.')
+      console.error(error)
+      setExportMessage(error instanceof Error ? `${error.name}: ${error.message}` : String(error))
       setStatus('MP4 export failed.')
     } finally {
       if (frameAnimation) {

@@ -607,8 +607,8 @@ h2 {
   position: fixed;
   left: -10000px;
   top: -10000px;
-  width: 1px;
-  height: 1px;
+  width: 640px;
+  height: 640px;
   overflow: hidden;
   pointer-events: none;
 }
