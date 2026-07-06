@@ -73,6 +73,17 @@ function downloadFile(file: File) {
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
+function fileInitials(name: string) {
+  return name
+    .replace(/\.[^.]+$/, '')
+    .split(/[\s._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('')
+    .slice(0, 2) || 'LF'
+}
+
 async function readDroppedFiles(items: DataTransferItemList, files: FileList) {
   const itemArray = Array.from(items ?? [])
 
@@ -240,6 +251,7 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState('JSON dosyalarını bırak.')
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   const readyCount = useMemo(() => assets.filter((asset) => asset.status === 'ready').length, [assets])
@@ -373,12 +385,26 @@ function App() {
     setSortMode('featured')
     setTab('all')
     setHoveredId(null)
+    setDetailOpen(false)
     setStatus('Liste temizlendi.')
   }
 
   const activeAsset = assets.find((asset) => asset.id === activeId) ?? filteredAssets[0] ?? null
   const totalCount = assets.length
   const detailsAsset = activeAsset ?? filteredAssets[0] ?? null
+
+  useEffect(() => {
+    if (!detailOpen) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setDetailOpen(false)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [detailOpen])
 
   return (
     <div
@@ -505,48 +531,46 @@ function App() {
           <div className="card-grid" aria-label="Loaded Lottie assets">
             {filteredAssets.map((asset) => {
               const active = asset.id === activeAsset?.id
-                return (
-                  <button
-                    type="button"
-                    key={asset.id}
-                    className={`asset-card ${active ? 'is-active' : ''}`}
-                    onClick={() => setActiveId(asset.id)}
-                    onMouseEnter={() => setHoveredId(asset.id)}
-                    onMouseLeave={() => setHoveredId((current) => (current === asset.id ? null : current))}
-                  >
-                    <div className="asset-preview">
-                      {asset.status === 'ready' && asset.data ? (
-                        <Thumbnail data={asset.data} autoplay={hoveredId === asset.id} />
-                      ) : (
-                        <div className="error-preview">
-                          <span>!</span>
-                          <strong>Invalid JSON</strong>
+              return (
+                <button
+                  type="button"
+                  key={asset.id}
+                  className={`asset-card ${active ? 'is-active' : ''}`}
+                  onClick={() => {
+                    setActiveId(asset.id)
+                    setDetailOpen(true)
+                  }}
+                  onMouseEnter={() => setHoveredId(asset.id)}
+                  onMouseLeave={() => setHoveredId((current) => (current === asset.id ? null : current))}
+                >
+                  <div className="asset-preview">
+                    {asset.status === 'ready' && asset.data ? (
+                      <Thumbnail data={asset.data} autoplay={hoveredId === asset.id} />
+                    ) : (
+                      <div className="error-preview">
+                        <span>!</span>
+                        <strong>Invalid JSON</strong>
                       </div>
                     )}
+                    {active ? <span className="card-chip">Selected</span> : null}
                   </div>
                   <div className="asset-meta">
                     <div className="asset-head">
                       <span className="asset-name">{asset.name}</span>
-                      <span className={`asset-badge ${asset.status === 'ready' ? 'is-ready' : 'is-error'}`}>
-                        {asset.status === 'ready' ? `${asset.frames}f` : 'Error'}
-                      </span>
                     </div>
-                    <div className="asset-subline">
-                      {asset.status === 'ready' ? (
-                        <>
-                          {asset.width}x{asset.height} <span>·</span> {formatDuration(asset.duration ?? 0)}
-                        </>
-                      ) : (
-                        asset.error ?? 'Parse failed'
-                      )}
-                    </div>
-                    <div className="asset-foot">
-                      {formatBytes(asset.size)}
-                      {asset.status === 'ready' && asset.frameRate ? (
-                        <>
-                          <span>·</span> {asset.frameRate} fps
-                        </>
-                      ) : null}
+                    <div className="asset-footer">
+                      <div className="author-pill">
+                        <span className="author-avatar">{fileInitials(asset.name)}</span>
+                        <span className="author-text">Local import</span>
+                      </div>
+                      <div className="asset-metric">
+                        <span className={`asset-badge ${asset.status === 'ready' ? 'is-ready' : 'is-error'}`}>
+                          {asset.status === 'ready' ? `${asset.frames}f` : 'Error'}
+                        </span>
+                        <span className="asset-foot">
+                          {asset.status === 'ready' ? formatBytes(asset.size) : asset.error ?? 'Parse failed'}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </button>
@@ -561,45 +585,57 @@ function App() {
         )}
       </main>
 
-      {detailsAsset ? (
-        <aside className="detail-panel" aria-label="Selected asset details">
-          <div className="detail-head">
-            <div>
-              <p className="detail-kicker">Detail</p>
-              <h2>{detailsAsset.name}</h2>
-              <p className="detail-meta">
-                {detailsAsset.status === 'ready'
-                  ? `${detailsAsset.width}x${detailsAsset.height} · ${detailsAsset.frames} frames · ${formatDuration(detailsAsset.duration ?? 0)}`
-                  : detailsAsset.error ?? 'Parse failed'}
-              </p>
+      {detailOpen && detailsAsset ? (
+        <div className="detail-overlay" role="presentation" onClick={() => setDetailOpen(false)}>
+          <aside
+            className="detail-panel"
+            aria-label="Selected asset details"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="detail-head">
+              <div>
+                <p className="detail-kicker">Detail</p>
+                <h2>{detailsAsset.name}</h2>
+                <p className="detail-meta">
+                  {detailsAsset.status === 'ready'
+                    ? `${detailsAsset.width}x${detailsAsset.height} · ${detailsAsset.frames} frames · ${formatDuration(detailsAsset.duration ?? 0)}`
+                    : detailsAsset.error ?? 'Parse failed'}
+                </p>
+              </div>
+
+              <div className="detail-actions">
+                <button type="button" className="button" onClick={() => setDetailOpen(false)}>
+                  Close
+                </button>
+                <button type="button" className="button" onClick={() => downloadFile(detailsAsset.file)}>
+                  Download JSON
+                </button>
+                <button type="button" className="button" disabled>
+                  Export MP4
+                </button>
+              </div>
             </div>
 
-            <div className="detail-actions">
-              <button type="button" className="button" onClick={() => downloadFile(detailsAsset.file)}>
-                Download JSON
-              </button>
+            <div className="detail-stage">
+              <DetailPreview asset={detailsAsset} />
             </div>
-          </div>
 
-          <div className="detail-stage">
-            <DetailPreview asset={detailsAsset} />
-          </div>
-
-          <div className="detail-info">
-            <div>
-              <span>File</span>
-              <strong>{detailsAsset.file.name}</strong>
+            <div className="detail-info">
+              <div>
+                <span>File</span>
+                <strong>{detailsAsset.file.name}</strong>
+              </div>
+              <div>
+                <span>Size</span>
+                <strong>{formatBytes(detailsAsset.size)}</strong>
+              </div>
+              <div>
+                <span>Status</span>
+                <strong>{detailsAsset.status}</strong>
+              </div>
             </div>
-            <div>
-              <span>Size</span>
-              <strong>{formatBytes(detailsAsset.size)}</strong>
-            </div>
-            <div>
-              <span>Status</span>
-              <strong>{detailsAsset.status}</strong>
-            </div>
-          </div>
-        </aside>
+          </aside>
+        </div>
       ) : null}
     </div>
   )
