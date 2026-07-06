@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import type { AnimationItem } from 'lottie-web'
+import { FFmpeg } from '@ffmpeg/ffmpeg'
+import { fetchFile, toBlobURL } from '@ffmpeg/util'
 import './App.css'
 
 type LottieData = Record<string, unknown> & {
@@ -30,6 +32,8 @@ type AssetRecord = {
 }
 
 type LottieModule = typeof import('lottie-web')
+
+const FFMPEG_CORE_BASE = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.15/dist/esm'
 
 function formatBytes(size: number) {
   if (size < 1024) return `${size} B`
@@ -84,6 +88,16 @@ function fileInitials(name: string) {
     .slice(0, 2) || 'LF'
 }
 
+function safeFileName(name: string) {
+  return name.replace(/\.[^.]+$/, '')
+}
+
+function nextFrame() {
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+}
+
 async function readDroppedFiles(items: DataTransferItemList, files: FileList) {
   const itemArray = Array.from(items ?? [])
 
@@ -133,6 +147,35 @@ async function readDroppedFiles(items: DataTransferItemList, files: FileList) {
   }
 
   return Array.from(files ?? [])
+}
+
+async function loadFfmpeg(ffmpeg: FFmpeg, loadedRef: { current: boolean }) {
+  if (loadedRef.current) return
+
+  ffmpeg.on('log', ({ message }) => {
+    console.debug('[ffmpeg]', message)
+  })
+
+  await ffmpeg.load({
+    coreURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.js`, 'text/javascript'),
+    wasmURL: await toBlobURL(`${FFMPEG_CORE_BASE}/ffmpeg-core.wasm`, 'application/wasm'),
+  })
+
+  loadedRef.current = true
+}
+
+async function canvasToBlob(canvas: HTMLCanvasElement) {
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((result) => {
+      if (result) {
+        resolve(result)
+        return
+      }
+      reject(new Error('Canvas frame could not be captured.'))
+    }, 'image/png')
+  })
+
+  return blob
 }
 
 function Thumbnail({ data, autoplay }: { data: LottieData; autoplay: boolean }) {
@@ -252,7 +295,14 @@ function App() {
   const [status, setStatus] = useState('JSON dosyalarını bırak.')
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [exportProgress, setExportProgress] = useState(0)
+  const [exportMessage, setExportMessage] = useState<string>('')
+  const [exportUrl, setExportUrl] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const ffmpegRef = useRef(new FFmpeg())
+  const ffmpegLoadedRef = useRef(false)
+  const exportCanvasHostRef = useRef<HTMLDivElement | null>(null)
 
   const readyCount = useMemo(() => assets.filter((asset) => asset.status === 'ready').length, [assets])
   const errorCount = useMemo(() => assets.filter((asset) => asset.status === 'error').length, [assets])
@@ -405,6 +455,134 @@ function App() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [detailOpen])
+
+  useEffect(() => {
+    return () => {
+      if (exportUrl) {
+        URL.revokeObjectURL(exportUrl)
+      }
+    }
+  }, [exportUrl])
+
+  async function exportSelectedMp4(asset: AssetRecord) {
+    if (asset.status !== 'ready' || !asset.data) {
+      setExportMessage('Only ready Lottie JSON files can be exported.')
+      return
+    }
+
+    const host = exportCanvasHostRef.current
+    if (!host) {
+      setExportMessage('Export surface is not ready.')
+      return
+    }
+
+    setExporting(true)
+    setExportProgress(0)
+    setExportMessage('Loading ffmpeg...')
+
+    const ffmpeg = ffmpegRef.current
+    let frameAnimation: AnimationItem | null = null
+    let previewModule: LottieModule | null = null
+    const fileStem = safeFileName(asset.name).replace(/[^a-zA-Z0-9_-]+/g, '-').toLowerCase() || 'lottie'
+    const runId = `${Date.now()}-${asset.id.replace(/[^a-zA-Z0-9_-]+/g, '-')}`
+
+    try {
+      await loadFfmpeg(ffmpeg, ffmpegLoadedRef)
+      setExportMessage('Rendering frames...')
+
+      previewModule = await import('lottie-web')
+      host.innerHTML = ''
+      frameAnimation = previewModule.default.loadAnimation({
+        container: host,
+        renderer: 'canvas',
+        loop: false,
+        autoplay: false,
+        animationData: asset.data,
+        rendererSettings: {
+          preserveAspectRatio: 'xMidYMid meet',
+          clearCanvas: true,
+          progressiveLoad: true,
+        },
+      })
+
+      const totalFrames = Math.max(1, asset.frames ?? 1)
+      const fps = Math.max(1, Math.round(asset.frameRate ?? 30))
+
+      for (let index = 0; index < totalFrames; index += 1) {
+        frameAnimation.goToAndStop(index, true)
+        await nextFrame()
+
+        const canvas = host.querySelector('canvas')
+        if (!(canvas instanceof HTMLCanvasElement)) {
+          throw new Error('Canvas renderer did not initialize.')
+        }
+
+        const blob = await canvasToBlob(canvas)
+        const frameName = `${fileStem}-${runId}-${String(index).padStart(5, '0')}.png`
+        await ffmpeg.writeFile(frameName, await fetchFile(blob))
+        setExportProgress(Math.round(((index + 1) / totalFrames) * 100))
+      }
+
+      setExportMessage('Encoding MP4...')
+      const inputPattern = `${fileStem}-${runId}-%05d.png`
+      const outputName = `${fileStem}-${runId}.mp4`
+      await ffmpeg.exec([
+        '-framerate',
+        String(fps),
+        '-i',
+        inputPattern,
+        '-vf',
+        'pad=ceil(iw/2)*2:ceil(ih/2)*2',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-movflags',
+        '+faststart',
+        outputName,
+      ])
+
+      const output = await ffmpeg.readFile(outputName)
+      const mp4Bytes =
+        output instanceof Uint8Array
+          ? output
+          : typeof output === 'string'
+            ? new TextEncoder().encode(output)
+            : new Uint8Array(output as ArrayBuffer)
+      const mp4Buffer = Uint8Array.from(mp4Bytes).buffer
+      const mp4Blob = new Blob([mp4Buffer], { type: 'video/mp4' })
+      const url = URL.createObjectURL(mp4Blob)
+
+      if (exportUrl) {
+        URL.revokeObjectURL(exportUrl)
+      }
+      setExportUrl(url)
+
+      const downloadLink = document.createElement('a')
+      downloadLink.href = url
+      downloadLink.download = `${fileStem}.mp4`
+      downloadLink.rel = 'noopener'
+      document.body.appendChild(downloadLink)
+      downloadLink.click()
+      downloadLink.remove()
+
+      setExportMessage('MP4 ready.')
+      setStatus('MP4 exported.')
+      setDetailOpen(true)
+    } catch (error) {
+      setExportMessage(error instanceof Error ? error.message : 'MP4 export failed.')
+      setStatus('MP4 export failed.')
+    } finally {
+      if (frameAnimation) {
+        frameAnimation.destroy()
+      }
+      if (host) {
+        host.innerHTML = ''
+      }
+      setExporting(false)
+      setExportProgress(0)
+    }
+  }
 
   return (
     <div
@@ -610,14 +788,24 @@ function App() {
                 <button type="button" className="button" onClick={() => downloadFile(detailsAsset.file)}>
                   Download JSON
                 </button>
-                <button type="button" className="button" disabled>
-                  Export MP4
+                <button
+                  type="button"
+                  className="button button-primary"
+                  onClick={() => exportSelectedMp4(detailsAsset)}
+                  disabled={exporting}
+                >
+                  {exporting ? 'Exporting...' : 'Export MP4'}
                 </button>
               </div>
             </div>
 
             <div className="detail-stage">
               <DetailPreview asset={detailsAsset} />
+            </div>
+
+            <div className="detail-export">
+              <span>{exportMessage || 'MP4 export is ready for the selected animation.'}</span>
+              {exporting ? <strong>{exportProgress}%</strong> : null}
             </div>
 
             <div className="detail-info">
@@ -637,6 +825,8 @@ function App() {
           </aside>
         </div>
       ) : null}
+
+      <div ref={exportCanvasHostRef} className="export-host" aria-hidden="true" />
     </div>
   )
 }

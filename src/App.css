@@ -334,6 +334,24 @@ h2 {
   justify-content: flex-end;
 }
 
+.detail-export {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #d8dde3;
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(244, 244, 242, 0.92);
+  color: #68707a;
+  font-size: 0.88rem;
+}
+
+.detail-export strong {
+  color: #171717;
+  font-size: 0.92rem;
+}
+
 .detail-stage {
   min-height: 320px;
   border: 1px solid #d8dde3;
@@ -583,6 +601,16 @@ h2 {
   color: #68707a;
   text-align: center;
   box-shadow: 0 8px 24px rgba(20, 28, 36, 0.04);
+}
+
+.export-host {
+  position: fixed;
+  left: -10000px;
+  top: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 @media (max-width: 1120px) {
