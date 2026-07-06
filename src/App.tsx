@@ -10,17 +10,23 @@ type LottieData = Record<string, unknown> & {
   h?: number
 }
 
-type AnimationAsset = {
+type AssetStatus = 'ready' | 'error'
+type AssetTab = 'all' | 'ready' | 'error'
+type SortMode = 'featured' | 'newest' | 'oldest' | 'largest' | 'smallest' | 'name'
+
+type AssetRecord = {
   id: string
   file: File
   name: string
   size: number
-  data: LottieData
-  width: number
-  height: number
-  frameRate: number
-  frames: number
-  duration: number
+  status: AssetStatus
+  data?: LottieData
+  error?: string
+  width?: number
+  height?: number
+  frameRate?: number
+  frames?: number
+  duration?: number
 }
 
 type LottieModule = typeof import('lottie-web')
@@ -38,9 +44,9 @@ function formatBytes(size: number) {
 }
 
 function formatDuration(seconds: number) {
-  if (!Number.isFinite(seconds) || seconds <= 0) return '0 sn'
-  if (seconds < 10) return `${seconds.toFixed(1)} sn`
-  return `${Math.round(seconds)} sn`
+  if (!Number.isFinite(seconds) || seconds <= 0) return '0s'
+  if (seconds < 10) return `${seconds.toFixed(1)}s`
+  return `${Math.round(seconds)}s`
 }
 
 function getAssetStats(data: LottieData) {
@@ -106,121 +112,99 @@ async function readDroppedFiles(items: DataTransferItemList, files: FileList) {
   return Array.from(files ?? [])
 }
 
-function App() {
-  const [assets, setAssets] = useState<AnimationAsset[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [search, setSearch] = useState('')
-  const [playing, setPlaying] = useState(true)
-  const [speed, setSpeed] = useState(1)
-  const [frame, setFrame] = useState(0)
-  const [dragging, setDragging] = useState(false)
-  const [status, setStatus] = useState('JSON dosyalarını bırak.')
-  const [loading, setLoading] = useState(false)
-  const inputRef = useRef<HTMLInputElement | null>(null)
-  const previewRef = useRef<HTMLDivElement | null>(null)
+function Thumbnail({ data }: { data: LottieData }) {
+  const hostRef = useRef<HTMLDivElement | null>(null)
   const animationRef = useRef<AnimationItem | null>(null)
-  const lottieModuleRef = useRef<LottieModule | null>(null)
-
-  const selectedAsset = useMemo(
-    () => assets.find((asset) => asset.id === selectedId) ?? assets[0] ?? null,
-    [assets, selectedId],
-  )
-
-  const filteredAssets = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    if (!query) return assets
-    return assets.filter((asset) => asset.name.toLowerCase().includes(query))
-  }, [assets, search])
+  const lottieRef = useRef<LottieModule | null>(null)
 
   useEffect(() => {
-    if (!selectedId && assets.length) {
-      setSelectedId(assets[0].id)
-    }
-  }, [assets, selectedId])
-
-  useEffect(() => {
-    const animation = animationRef.current
-    if (!animation) return
-    animation.setSpeed(speed)
-  }, [speed])
-
-  useEffect(() => {
-    const animation = animationRef.current
-    if (!animation) return
-    if (playing) {
-      animation.play()
-    } else {
-      animation.pause()
-    }
-  }, [playing, selectedAsset?.id])
-
-  useEffect(() => {
-    const animation = animationRef.current
-    if (!animation || playing) return
-    animation.goToAndStop(frame, true)
-  }, [frame, playing])
-
-  useEffect(() => {
-    const container = previewRef.current
-    const asset = selectedAsset
+    const host = hostRef.current
     let cancelled = false
-    let localAnimation: AnimationItem | null = null
 
-    if (!container || !asset) {
-      if (previewRef.current) {
-        previewRef.current.innerHTML = ''
-      }
-      animationRef.current?.destroy()
-      animationRef.current = null
-      return
-    }
+    if (!host) return
 
-    const mountAnimation = async () => {
-      const module = lottieModuleRef.current ?? (await import('lottie-web'))
-      if (cancelled) return
+    const mount = async () => {
+      const module = lottieRef.current ?? (await import('lottie-web'))
+      if (cancelled || !hostRef.current) return
 
-      lottieModuleRef.current = module
-      container.innerHTML = ''
+      lottieRef.current = module
+      host.innerHTML = ''
       animationRef.current?.destroy()
 
-      localAnimation = module.default.loadAnimation({
-        container,
+      animationRef.current = module.default.loadAnimation({
+        container: host,
         renderer: 'svg',
-        loop: true,
-        autoplay: playing,
-        animationData: asset.data,
+        loop: false,
+        autoplay: false,
+        animationData: data,
         rendererSettings: {
           preserveAspectRatio: 'xMidYMid meet',
           progressiveLoad: true,
         },
       })
 
-      const handleEnterFrame = () => {
-        setFrame(localAnimation?.currentFrame ?? 0)
-      }
-
-      localAnimation.setSpeed(speed)
-      localAnimation.addEventListener('enterFrame', handleEnterFrame)
-
-      if (!playing) {
-        localAnimation.goToAndStop(frame, true)
-      }
-
-      animationRef.current = localAnimation
+      animationRef.current.goToAndStop(0, true)
     }
 
-    void mountAnimation()
+    void mount()
 
     return () => {
       cancelled = true
-      if (localAnimation) {
-        localAnimation.destroy()
-        if (animationRef.current === localAnimation) {
-          animationRef.current = null
-        }
-      }
+      animationRef.current?.destroy()
+      animationRef.current = null
     }
-  }, [selectedAsset])
+  }, [data])
+
+  return <div ref={hostRef} className="thumb-host" aria-hidden="true" />
+}
+
+function App() {
+  const [assets, setAssets] = useState<AssetRecord[]>([])
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const [sortMode, setSortMode] = useState<SortMode>('featured')
+  const [tab, setTab] = useState<AssetTab>('all')
+  const [dragging, setDragging] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [status, setStatus] = useState('JSON dosyalarını bırak.')
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  const readyCount = useMemo(() => assets.filter((asset) => asset.status === 'ready').length, [assets])
+  const errorCount = useMemo(() => assets.filter((asset) => asset.status === 'error').length, [assets])
+
+  useEffect(() => {
+    if (!activeId && assets.length) {
+      setActiveId(assets[0].id)
+    }
+  }, [activeId, assets])
+
+  const filteredAssets = useMemo(() => {
+    const query = search.trim().toLowerCase()
+
+    let next = assets.filter((asset) => {
+      if (tab === 'ready') return asset.status === 'ready'
+      if (tab === 'error') return asset.status === 'error'
+      return true
+    })
+
+    if (query) {
+      next = next.filter((asset) => asset.name.toLowerCase().includes(query))
+    }
+
+    const sorters: Record<SortMode, (a: AssetRecord, b: AssetRecord) => number> = {
+      featured: (a, b) => {
+        if (a.status !== b.status) return a.status === 'ready' ? -1 : 1
+        return b.size - a.size
+      },
+      newest: (a, b) => b.id.localeCompare(a.id),
+      oldest: (a, b) => a.id.localeCompare(b.id),
+      largest: (a, b) => b.size - a.size,
+      smallest: (a, b) => a.size - b.size,
+      name: (a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }),
+    }
+
+    return [...next].sort(sorters[sortMode])
+  }, [assets, search, sortMode, tab])
 
   async function ingestFiles(files: File[]) {
     const jsonFiles = files.filter((file) => {
@@ -246,36 +230,39 @@ function App() {
             file,
             name: file.name,
             size: file.size,
+            status: 'ready' as const,
             data,
             width: stats.width,
             height: stats.height,
             frameRate: stats.frameRate,
             frames: stats.frames,
             duration: stats.duration,
-          } satisfies AnimationAsset
+          } satisfies AssetRecord
         }),
       )
 
-      const parsed = settled
-        .filter((result): result is PromiseFulfilledResult<AnimationAsset> => result.status === 'fulfilled')
-        .map((result) => result.value)
+      const parsed = settled.map((result, index) => {
+        const file = jsonFiles[index]
+        if (result.status === 'fulfilled') return result.value
+        return {
+          id: `${file.name}-${file.size}-${crypto.randomUUID()}`,
+          file,
+          name: file.name,
+          size: file.size,
+          status: 'error' as const,
+          error: result.reason instanceof Error ? result.reason.message : 'Dosya okunamadı.',
+        } satisfies AssetRecord
+      })
 
-      const rejected = settled.filter(
-        (result): result is PromiseRejectedResult => result.status === 'rejected',
-      )
-
-      if (!parsed.length && rejected.length) {
-        throw rejected[0]?.reason ?? new Error('Dosyalar okunamadı.')
-      }
+      const addedReady = parsed.filter((asset) => asset.status === 'ready').length
+      const addedError = parsed.filter((asset) => asset.status === 'error').length
 
       setAssets((current) => [...current, ...parsed])
-      setSelectedId((current) => current ?? parsed[0]?.id ?? null)
-      setPlaying(true)
-      setFrame(0)
+      setActiveId((current) => current ?? parsed[0]?.id ?? null)
       setStatus(
-        rejected.length
-          ? `${parsed.length} dosya yüklendi, ${rejected.length} dosya atlandı.`
-          : `${parsed.length} dosya yüklendi. Toplam ${assets.length + parsed.length} adet.`,
+        addedError
+          ? `${addedReady} hazır, ${addedError} hatalı dosya eklendi.`
+          : `${addedReady} dosya eklendi.`,
       )
     } finally {
       setLoading(false)
@@ -293,7 +280,7 @@ function App() {
     }
   }
 
-  async function handleDrop(event: DragEvent<HTMLDivElement>) {
+  async function handleDrop(event: DragEvent<HTMLElement>) {
     event.preventDefault()
     setDragging(false)
 
@@ -307,20 +294,16 @@ function App() {
   }
 
   function handleClear() {
-    animationRef.current?.destroy()
-    animationRef.current = null
     setAssets([])
-    setSelectedId(null)
+    setActiveId(null)
     setSearch('')
-    setPlaying(false)
-    setFrame(0)
+    setSortMode('featured')
+    setTab('all')
     setStatus('Liste temizlendi.')
-    if (previewRef.current) {
-      previewRef.current.innerHTML = ''
-    }
   }
 
-  const visibleCount = filteredAssets.length
+  const activeAsset = assets.find((asset) => asset.id === activeId) ?? filteredAssets[0] ?? null
+  const totalCount = assets.length
 
   return (
     <div
@@ -341,12 +324,10 @@ function App() {
       onDrop={handleDrop}
     >
       <header className="topbar">
-        <div>
+        <div className="brand">
           <p className="eyebrow">Bulk Lottie Viewer</p>
-          <h1>Bulk JSON önizleyici</h1>
-          <p className="lede">
-            Toplu JSON dosyalarını tek ekranda listele, seçili olanı sağdan incele.
-          </p>
+          <h1>Gallery view for batch checks</h1>
+          <p className="lede">Load a pile of Lottie JSON files, scan them as cards, and keep the whole batch visible.</p>
         </div>
 
         <div className="toolbar">
@@ -359,18 +340,15 @@ function App() {
             onChange={handleInputChange}
           />
           <button type="button" className="button button-primary" onClick={() => inputRef.current?.click()}>
-            Dosya seç
+            Add files
           </button>
           <button type="button" className="button" onClick={handleClear} disabled={!assets.length}>
-            Temizle
+            Clear
           </button>
         </div>
       </header>
 
-      <section
-        className={`dropzone ${loading ? 'is-loading' : ''}`}
-        aria-label="Lottie yükleme alanı"
-      >
+      <section className="upload-strip" aria-label="Upload area">
         <button
           type="button"
           className="upload-hero"
@@ -385,148 +363,125 @@ function App() {
           }}
         >
           <span className="upload-plus">+</span>
-          <span className="upload-text">
-            {loading ? 'Dosyalar okunuyor' : dragging ? 'Bırak ve yükle' : 'Dosya ekle'}
-          </span>
-          <span className="upload-hint">
-            Tıkla, 50 tane JSON seç ya da sürükleyip bırak.
-          </span>
+          <span className="upload-text">{loading ? 'Reading files' : dragging ? 'Drop to add' : 'Click or drop JSON files'}</span>
+          <span className="upload-hint">Supports 50 files at once. Nested folders work too.</span>
         </button>
 
-        <div className="stats">
+        <div className="upload-stats">
           <div>
-            <span>Yüklenen</span>
-            <strong>{assets.length}</strong>
+            <span>Total</span>
+            <strong>{totalCount}</strong>
           </div>
           <div>
-            <span>Görünür</span>
-            <strong>{visibleCount}</strong>
+            <span>Ready</span>
+            <strong>{readyCount}</strong>
           </div>
           <div>
-            <span>Durum</span>
+            <span>Errors</span>
+            <strong>{errorCount}</strong>
+          </div>
+          <div>
+            <span>Status</span>
             <strong>{status}</strong>
           </div>
         </div>
       </section>
 
-      <main className="workspace">
-        <aside className="sidebar">
-          <div className="panel-head">
-            <div>
-              <p className="panel-label">Toplu liste</p>
-              <h2>{assets.length ? `${assets.length} öğe` : 'Boş'}</h2>
-            </div>
-            <label className="search">
-              <span>Arama</span>
-              <input
-                type="search"
-                value={search}
-                placeholder="Dosya adı"
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </label>
-          </div>
+      <section className="gallery-toolbar">
+        <div className="tabs" role="tablist" aria-label="Asset filters">
+          <button type="button" className={`tab ${tab === 'all' ? 'is-active' : ''}`} onClick={() => setTab('all')}>
+            All Assets <span>{assets.length}</span>
+          </button>
+          <button type="button" className={`tab ${tab === 'ready' ? 'is-active' : ''}`} onClick={() => setTab('ready')}>
+            Lottie Animations <span>{readyCount}</span>
+          </button>
+          <button type="button" className={`tab ${tab === 'error' ? 'is-active' : ''}`} onClick={() => setTab('error')}>
+            Errors <span>{errorCount}</span>
+          </button>
+        </div>
 
-          <div className="file-list" role="list" aria-label="Yüklenen Lottie dosyaları">
-            {filteredAssets.length ? (
-              filteredAssets.map((asset) => {
-                const active = asset.id === selectedAsset?.id
-                return (
-                  <button
-                    type="button"
-                    key={asset.id}
-                    className={`file-row ${active ? 'is-active' : ''}`}
-                    onClick={() => {
-                      setSelectedId(asset.id)
-                      setFrame(0)
-                    }}
-                  >
-                    <span className="file-row-name">{asset.name}</span>
-                    <span className="file-row-meta">
-                      {formatBytes(asset.size)} · {asset.width}x{asset.height}
-                    </span>
-                  </button>
-                )
-              })
-            ) : (
-              <div className="empty-list">
-                <p>Henüz dosya yok.</p>
-                <p>Dosya seç ya da alana bırak.</p>
-              </div>
-            )}
-          </div>
-        </aside>
+        <div className="filters">
+          <label className="select-field">
+            <span>Sort</span>
+            <select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}>
+              <option value="featured">Featured</option>
+              <option value="newest">Newest</option>
+              <option value="oldest">Oldest</option>
+              <option value="largest">Largest</option>
+              <option value="smallest">Smallest</option>
+              <option value="name">Name</option>
+            </select>
+          </label>
 
-        <section className="preview-panel">
-          <div className="preview-head">
-            <div>
-              <p className="panel-label">Seçili önizleme</p>
-              <h2>{selectedAsset ? selectedAsset.name : 'Bir dosya seç'}</h2>
-              {selectedAsset ? (
-                <p className="preview-meta">
-                  {selectedAsset.width}x{selectedAsset.height} · {selectedAsset.frames} frame ·{' '}
-                  {formatDuration(selectedAsset.duration)}
-                </p>
-              ) : (
-                <p className="preview-meta">Sağ tarafta tek dosya büyür, solda liste kalır.</p>
-              )}
-            </div>
+          <label className="select-field">
+            <span>Search</span>
+            <input
+              type="search"
+              value={search}
+              placeholder="Filter by name"
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+        </div>
+      </section>
 
-            <div className="player-controls">
-              <button
-                type="button"
-                className="button button-primary"
-                onClick={() => setPlaying((current) => !current)}
-                disabled={!selectedAsset}
-              >
-                {playing ? 'Duraklat' : 'Oynat'}
-              </button>
-              <label className="speed">
-                <span>Hız</span>
-                <input
-                  type="range"
-                  min="0.25"
-                  max="3"
-                  step="0.25"
-                  value={speed}
-                  onChange={(event) => setSpeed(Number(event.target.value))}
-                  disabled={!selectedAsset}
-                />
-                <strong>{speed.toFixed(2)}x</strong>
-              </label>
-            </div>
+      <main className="gallery-shell">
+        {filteredAssets.length ? (
+          <div className="card-grid" aria-label="Loaded Lottie assets">
+            {filteredAssets.map((asset) => {
+              const active = asset.id === activeAsset?.id
+              return (
+                <button
+                  type="button"
+                  key={asset.id}
+                  className={`asset-card ${active ? 'is-active' : ''}`}
+                  onClick={() => setActiveId(asset.id)}
+                >
+                  <div className="asset-preview">
+                    {asset.status === 'ready' && asset.data ? (
+                      <Thumbnail data={asset.data} />
+                    ) : (
+                      <div className="error-preview">
+                        <span>!</span>
+                        <strong>Invalid JSON</strong>
+                      </div>
+                    )}
+                  </div>
+                  <div className="asset-meta">
+                    <div className="asset-head">
+                      <span className="asset-name">{asset.name}</span>
+                      <span className={`asset-badge ${asset.status === 'ready' ? 'is-ready' : 'is-error'}`}>
+                        {asset.status === 'ready' ? `${asset.frames}f` : 'Error'}
+                      </span>
+                    </div>
+                    <div className="asset-subline">
+                      {asset.status === 'ready' ? (
+                        <>
+                          {asset.width}x{asset.height} <span>·</span> {formatDuration(asset.duration ?? 0)}
+                        </>
+                      ) : (
+                        asset.error ?? 'Parse failed'
+                      )}
+                    </div>
+                    <div className="asset-foot">
+                      {formatBytes(asset.size)}
+                      {asset.status === 'ready' && asset.frameRate ? (
+                        <>
+                          <span>·</span> {asset.frameRate} fps
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
           </div>
-
-          <div className="stage">
-            {selectedAsset ? (
-              <div className="player-wrap">
-                <div className="player" ref={previewRef} />
-                <div className="scrub">
-                  <span>
-                    Kare {Math.round(frame)} / {selectedAsset.frames}
-                  </span>
-                  <input
-                    type="range"
-                    min="0"
-                    max={selectedAsset.frames}
-                    step="1"
-                    value={Math.min(frame, selectedAsset.frames)}
-                    onChange={(event) => {
-                      const nextFrame = Number(event.target.value)
-                      setFrame(nextFrame)
-                      setPlaying(false)
-                    }}
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="stage-empty">
-                <p>Önizleme için bir Lottie seç.</p>
-                <p>50 dosyayı tek seferde yükleyebilirsin.</p>
-              </div>
-            )}
+        ) : (
+          <div className="empty-state">
+            <p>No files yet.</p>
+            <p>Use the plus button or drop a folder of JSON files here.</p>
           </div>
-        </section>
+        )}
       </main>
     </div>
   )
