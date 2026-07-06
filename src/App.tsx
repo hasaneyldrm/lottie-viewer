@@ -345,7 +345,7 @@ function App() {
           <p className="eyebrow">Bulk Lottie Viewer</p>
           <h1>Bulk JSON önizleyici</h1>
           <p className="lede">
-            Dosyaları sürükle-bırak, soldaki listeden seç, sağda büyük önizlemeyi kontrol et.
+            Toplu JSON dosyalarını tek ekranda listele, seçili olanı sağdan incele.
           </p>
         </div>
 
@@ -367,33 +367,31 @@ function App() {
         </div>
       </header>
 
-      <section className="about-bar" aria-label="About this app">
-        <div>
-          <p className="panel-label">About</p>
-          <p className="about-copy">
-            Bulk Lottie Viewer is a local review tool for scanning many JSON animations at once,
-            checking dimensions, and previewing the selected file in a larger stage.
-          </p>
-        </div>
-        <div className="about-meta">
-          <span>Batch-friendly</span>
-          <span>Drag and drop</span>
-          <span>Single-file preview</span>
-        </div>
-      </section>
-
       <section
         className={`dropzone ${loading ? 'is-loading' : ''}`}
         aria-label="Lottie yükleme alanı"
       >
-        <div className="dropzone-copy">
-          <p className="dropzone-title">
-            {loading ? 'Dosyalar okunuyor' : dragging ? 'Bırak ve yükle' : 'JSON dosyalarını bırak'}
-          </p>
-          <p className="dropzone-subtitle">
-            Tek seferde 50 dosya bırakabilirsin. Klasör de sürükleyebilirsin; içindeki JSON'ları tarar.
-          </p>
-        </div>
+        <button
+          type="button"
+          className="upload-hero"
+          onClick={() => inputRef.current?.click()}
+          onDragEnter={(event) => {
+            event.preventDefault()
+            setDragging(true)
+          }}
+          onDragOver={(event) => {
+            event.preventDefault()
+            setDragging(true)
+          }}
+        >
+          <span className="upload-plus">+</span>
+          <span className="upload-text">
+            {loading ? 'Dosyalar okunuyor' : dragging ? 'Bırak ve yükle' : 'Dosya ekle'}
+          </span>
+          <span className="upload-hint">
+            Tıkla, 50 tane JSON seç ya da sürükleyip bırak.
+          </span>
+        </button>
 
         <div className="stats">
           <div>
@@ -415,7 +413,7 @@ function App() {
         <aside className="sidebar">
           <div className="panel-head">
             <div>
-              <p className="panel-label">Dosya listesi</p>
+              <p className="panel-label">Toplu liste</p>
               <h2>{assets.length ? `${assets.length} öğe` : 'Boş'}</h2>
             </div>
             <label className="search">
@@ -462,7 +460,7 @@ function App() {
         <section className="preview-panel">
           <div className="preview-head">
             <div>
-              <p className="panel-label">Önizleme</p>
+              <p className="panel-label">Seçili önizleme</p>
               <h2>{selectedAsset ? selectedAsset.name : 'Bir dosya seç'}</h2>
               {selectedAsset ? (
                 <p className="preview-meta">
