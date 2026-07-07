@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
-  base: command === 'serve' ? '/' : '/lottie-viewer/',
+  base: command === 'serve' ? '/' : '/lottie-ai-studio/',
   plugins: [react()],
   server: {
     proxy: {

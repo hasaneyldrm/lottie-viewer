@@ -1,6 +1,6 @@
-# Bulk Lottie Viewer
+# Lottie AI Studio
 
-Bulk Lottie Viewer is a browser-based dashboard for inspecting, exporting, and AI-editing many Lottie JSON files at once.
+Lottie AI Studio is a browser-based dashboard for inspecting, exporting, and AI-editing many Lottie JSON files at once.
 
 ## What it does
 
@@ -46,3 +46,5 @@ npm run build
 ## Deploy
 
 The repository includes a GitHub Pages workflow. Push to `main`, then enable GitHub Pages with **Source: GitHub Actions** in the repository settings.
+
+Public URL: `https://hasaneyldrm.github.io/lottie-ai-studio/`

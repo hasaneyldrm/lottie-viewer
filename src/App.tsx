@@ -48,6 +48,11 @@ type AiHistoryItem = {
 }
 
 const FFMPEG_CORE_BASE = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm'
+const SESSION_PREFIX = 'lottie-ai-studio'
+
+function readSessionValue(key: string, legacyKey: string) {
+  return sessionStorage.getItem(`${SESSION_PREFIX}:${key}`) ?? sessionStorage.getItem(`bulk-lottie-viewer:${legacyKey}`) ?? ''
+}
 
 function formatBytes(size: number) {
   if (size < 1024) return `${size} B`
@@ -452,9 +457,9 @@ function App() {
   const [exportMessage, setExportMessage] = useState<string>('')
   const [exportUrl, setExportUrl] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [falKey, setFalKey] = useState(() => sessionStorage.getItem('bulk-lottie-viewer:fal-key') ?? '')
-  const [wiroKey, setWiroKey] = useState(() => sessionStorage.getItem('bulk-lottie-viewer:wiro-key') ?? '')
-  const [wiroModel, setWiroModel] = useState(() => sessionStorage.getItem('bulk-lottie-viewer:wiro-model') ?? 'openai/gpt-5.5')
+  const [falKey, setFalKey] = useState(() => readSessionValue('fal-key', 'fal-key'))
+  const [wiroKey, setWiroKey] = useState(() => readSessionValue('wiro-key', 'wiro-key'))
+  const [wiroModel, setWiroModel] = useState(() => readSessionValue('wiro-model', 'wiro-model') || 'openai/gpt-5.5')
   const [aiProvider, setAiProvider] = useState<AiProvider>('smart')
   const [aiPrompt, setAiPrompt] = useState('Make this animation cleaner, smoother, and more premium while keeping the same idea.')
   const [aiRunningCount, setAiRunningCount] = useState(0)
@@ -472,25 +477,25 @@ function App() {
 
   useEffect(() => {
     if (falKey) {
-      sessionStorage.setItem('bulk-lottie-viewer:fal-key', falKey)
+      sessionStorage.setItem(`${SESSION_PREFIX}:fal-key`, falKey)
     } else {
-      sessionStorage.removeItem('bulk-lottie-viewer:fal-key')
+      sessionStorage.removeItem(`${SESSION_PREFIX}:fal-key`)
     }
   }, [falKey])
 
   useEffect(() => {
     if (wiroKey) {
-      sessionStorage.setItem('bulk-lottie-viewer:wiro-key', wiroKey)
+      sessionStorage.setItem(`${SESSION_PREFIX}:wiro-key`, wiroKey)
     } else {
-      sessionStorage.removeItem('bulk-lottie-viewer:wiro-key')
+      sessionStorage.removeItem(`${SESSION_PREFIX}:wiro-key`)
     }
   }, [wiroKey])
 
   useEffect(() => {
     if (wiroModel) {
-      sessionStorage.setItem('bulk-lottie-viewer:wiro-model', wiroModel)
+      sessionStorage.setItem(`${SESSION_PREFIX}:wiro-model`, wiroModel)
     } else {
-      sessionStorage.removeItem('bulk-lottie-viewer:wiro-model')
+      sessionStorage.removeItem(`${SESSION_PREFIX}:wiro-model`)
     }
   }, [wiroModel])
 
@@ -1067,7 +1072,7 @@ function App() {
 
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <h1>Bulk Lottie Viewer</h1>
+          <h1>Lottie AI Studio</h1>
         </div>
 
         <div className="sidebar-tools">
@@ -1197,7 +1202,7 @@ function App() {
       <main className="main-shell">
         <header className="main-header">
           <div className="main-title">
-            <span className="kicker">Lottie Batch Viewer</span>
+            <span className="kicker">Lottie AI Studio</span>
             <span className="subtitle">{totalCount} animations loaded</span>
           </div>
 
@@ -1304,7 +1309,7 @@ function App() {
           </div>
           <div className="status-group credit-group">
             <span>Made with &lt;3 by hasaneyldrm</span>
-            <a href="https://github.com/hasaneyldrm/lottie-viewer" target="_blank" rel="noreferrer">
+            <a href="https://github.com/hasaneyldrm/lottie-ai-studio" target="_blank" rel="noreferrer">
               Open source
             </a>
           </div>
