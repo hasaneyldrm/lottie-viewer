@@ -40,9 +40,11 @@ type AiHistoryItem = {
   provider: AiProvider
   prompt: string
   assetName?: string
-  status: 'success' | 'error'
+  status: 'running' | 'success' | 'error'
   message: string
   createdAt: string
+  logs: string[]
+  rawOutput?: string
 }
 
 const FFMPEG_CORE_BASE = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm'
@@ -136,6 +138,16 @@ function extractJsonFromText(text: string) {
   const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
   const raw = (fenceMatch?.[1] ?? text).trim()
   return JSON.parse(raw)
+}
+
+function previewPayload(value: unknown) {
+  if (typeof value === 'string') return value.slice(0, 5000)
+
+  try {
+    return JSON.stringify(value, null, 2).slice(0, 5000)
+  } catch {
+    return String(value).slice(0, 5000)
+  }
 }
 
 function isLottieData(value: unknown): value is LottieData {
@@ -706,19 +718,48 @@ function App() {
     }
   }
 
-  function addAiHistory(item: Omit<AiHistoryItem, 'id' | 'createdAt'>) {
+  function addAiHistory(item: Omit<AiHistoryItem, 'id' | 'createdAt' | 'logs'> & { logs?: string[] }) {
     const entry = {
       ...item,
       id: crypto.randomUUID(),
       createdAt: new Date().toLocaleTimeString(),
+      logs: item.logs ?? [],
     }
 
     setAiHistory((current) => [entry, ...current].slice(0, 12))
     setActiveHistoryId(entry.id)
     setHistoryPanelOpen(true)
+    return entry.id
   }
 
-  function addGeneratedAsset(name: string, data: LottieData, provider: AiProvider, prompt: string) {
+  function updateAiHistory(id: string, patch: Partial<Omit<AiHistoryItem, 'id' | 'createdAt'>>) {
+    setAiHistory((current) =>
+      current.map((item) => {
+        if (item.id !== id) return item
+        return {
+          ...item,
+          ...patch,
+          logs: patch.logs ?? item.logs,
+        }
+      }),
+    )
+    setActiveHistoryId(id)
+  }
+
+  function appendAiHistoryLog(id: string, log: string) {
+    setAiHistory((current) =>
+      current.map((item) => {
+        if (item.id !== id) return item
+        return {
+          ...item,
+          logs: [...item.logs, log].slice(-24),
+        }
+      }),
+    )
+    setActiveHistoryId(id)
+  }
+
+  function addGeneratedAsset(name: string, data: LottieData) {
     const file = makeLottieFile(name, data)
     const asset = createAssetRecord(file, data)
 
@@ -726,21 +767,18 @@ function App() {
     setActiveId(asset.id)
     setStatus(`${name} AI ile eklendi.`)
     setAiMessage(`${name} ready.`)
-    addAiHistory({
-      provider,
-      prompt,
-      assetName: name,
-      status: 'success',
-      message: 'New Lottie added to the batch.',
-    })
   }
 
-  async function runFalOmnilottie(prompt: string) {
+  async function runFalOmnilottie(prompt: string, historyId: string) {
     if (!falKey.trim()) {
       throw new Error('Fal API key is missing.')
     }
 
     fal.config({ credentials: falKey.trim() })
+    updateAiHistory(historyId, {
+      message: 'Submitted to fal.ai Omnilottie.',
+      logs: ['Submitted to fal.ai Omnilottie.'],
+    })
     const result = await fal.subscribe('fal-ai/omnilottie', {
       input: {
         prompt,
@@ -751,17 +789,34 @@ function App() {
         if (update.status === 'IN_PROGRESS') {
           const latestLog = update.logs?.at(-1)?.message
           setAiMessage(latestLog ?? 'Fal is generating Lottie JSON...')
+          if (latestLog) {
+            updateAiHistory(historyId, {
+              message: latestLog,
+            })
+            appendAiHistoryLog(historyId, latestLog)
+          }
         }
       },
     })
 
     const data = result.data as { lottie_file?: { url?: string }; lottie?: unknown; output?: unknown }
+    updateAiHistory(historyId, {
+      message: 'Fal returned a result. Fetching generated JSON...',
+      rawOutput: previewPayload(data),
+      logs: ['Fal result received.', data.lottie_file?.url ? `Result file: ${data.lottie_file.url}` : 'Inline payload received.'],
+    })
     if (data.lottie_file?.url) {
       const response = await fetch(data.lottie_file.url)
       if (!response.ok) throw new Error(`Fal result could not be fetched: ${response.status}`)
       const generated = await response.json()
       const lottie = findLottieData(generated)
-      if (lottie) return lottie
+      if (lottie) {
+        updateAiHistory(historyId, {
+          rawOutput: previewPayload(generated),
+          logs: ['Downloaded generated JSON.', 'Valid Lottie JSON found.'],
+        })
+        return lottie
+      }
     }
 
     const direct = findLottieData(data)
@@ -770,7 +825,7 @@ function App() {
     throw new Error('Fal response did not include valid Lottie JSON.')
   }
 
-  async function runWiroEdit(asset: AssetRecord, prompt: string) {
+  async function runWiroEdit(asset: AssetRecord, prompt: string, historyId: string) {
     if (!wiroKey.trim()) {
       throw new Error('Wiro API key is missing.')
     }
@@ -791,6 +846,10 @@ function App() {
         `Current Lottie JSON: ${JSON.stringify(asset.data)}`,
       ].join('\n\n'),
     }
+    updateAiHistory(historyId, {
+      message: `Submitted to Wiro: ${wiroModel.trim()}`,
+      logs: [`Endpoint model: ${wiroModel.trim()}`, 'Waiting for Wiro response...'],
+    })
 
     const modelPath = wiroModel.trim().split('/').map(encodeURIComponent).join('/')
     const isLocalDev = ['localhost', '127.0.0.1'].includes(window.location.hostname)
@@ -822,9 +881,14 @@ function App() {
     }
 
     const payload = await response.json()
+    updateAiHistory(historyId, {
+      message: 'Wiro returned a response.',
+      rawOutput: previewPayload(payload),
+      logs: ['Wiro response received.', 'Checking for Lottie JSON...'],
+    })
     const lottie = findLottieData(payload)
     if (!lottie) {
-      throw new Error('Wiro response did not include valid Lottie JSON. Try a text/JSON capable model slug.')
+      throw new Error('Wiro response did not include valid Lottie JSON. Raw response is visible in History.')
     }
 
     return lottie
@@ -839,15 +903,40 @@ function App() {
 
     setAiBusy(true)
     setAiMessage(aiProvider === 'fal' ? 'Fal Omnilottie is generating...' : 'Wiro is editing JSON...')
+    const historyId = addAiHistory({
+      provider: aiProvider,
+      prompt,
+      status: 'running',
+      message: aiProvider === 'fal' ? 'Starting fal.ai Omnilottie request...' : 'Starting Wiro request...',
+      logs: ['Request created in browser session.'],
+    })
 
     try {
       const sourceName = asset?.name ? safeFileName(asset.name) : 'prompt'
+      const strongerPrompt =
+        aiProvider === 'fal'
+          ? [
+              prompt,
+              'Create a polished, production-ready Lottie animation.',
+              'Use clean vector shapes, smooth timing, readable composition, and avoid noisy decorative clutter.',
+              'Prefer simple premium motion over complex messy scenes.',
+              asset?.data ? `Reference the current Lottie concept and filename: ${sourceName}` : '',
+            ]
+              .filter(Boolean)
+              .join('\n')
+          : prompt
       const data =
         aiProvider === 'fal'
-          ? await runFalOmnilottie(asset?.data ? `${prompt}\n\nReference the current Lottie concept: ${sourceName}` : prompt)
-          : await runWiroEdit(asset as AssetRecord, prompt)
+          ? await runFalOmnilottie(strongerPrompt, historyId)
+          : await runWiroEdit(asset as AssetRecord, prompt, historyId)
       const name = `${sourceName}-${aiProvider}-edit-${Date.now()}.json`
-      addGeneratedAsset(name, data, aiProvider, prompt)
+      addGeneratedAsset(name, data)
+      updateAiHistory(historyId, {
+        assetName: name,
+        status: 'success',
+        message: 'New Lottie added to the batch.',
+        logs: ['Valid Lottie JSON parsed.', `Added asset: ${name}`],
+      })
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : String(error)
       const message =
@@ -855,11 +944,10 @@ function App() {
           ? 'Wiro could not be reached from this browser. Local dev now uses a proxy; refresh localhost and try again. On GitHub Pages, Wiro needs CORS support or a proxy URL.'
           : rawMessage
       setAiMessage(message)
-      addAiHistory({
-        provider: aiProvider,
-        prompt,
+      updateAiHistory(historyId, {
         status: 'error',
         message,
+        logs: ['Request failed.', message],
       })
     } finally {
       setAiBusy(false)
@@ -1338,7 +1426,7 @@ function App() {
                 >
                   <span>{item.assetName ?? item.message}</span>
                   <small>
-                    {item.provider} · {item.createdAt}
+                    {item.provider} · {item.status} · {item.createdAt}
                   </small>
                 </button>
               ))
@@ -1356,6 +1444,24 @@ function App() {
                 <span>Prompt</span>
                 <textarea value={activeHistory.prompt} readOnly rows={6} />
               </label>
+              <div className="history-log-block">
+                <span>Logs</span>
+                {activeHistory.logs.length ? (
+                  <ol>
+                    {activeHistory.logs.map((log, index) => (
+                      <li key={`${activeHistory.id}-${index}`}>{log}</li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p>No logs yet.</p>
+                )}
+              </div>
+              {activeHistory.rawOutput ? (
+                <label>
+                  <span>Raw output</span>
+                  <textarea value={activeHistory.rawOutput} readOnly rows={8} />
+                </label>
+              ) : null}
               {activeHistory.assetName ? (
                 <button
                   type="button"

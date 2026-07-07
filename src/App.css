@@ -874,6 +874,14 @@
   border-color: rgba(255, 186, 74, 0.45);
 }
 
+.history-row.running {
+  border-color: rgba(71, 214, 255, 0.55);
+}
+
+.history-row.success {
+  border-color: rgba(71, 214, 255, 0.28);
+}
+
 .history-row.is-active {
   border-color: #47d6ff;
 }
@@ -973,6 +981,37 @@
 
 .history-status.error {
   color: #ffba4a;
+}
+
+.history-status.running {
+  color: #47d6ff;
+}
+
+.history-status.success {
+  color: #47d6ff;
+}
+
+.history-log-block {
+  display: grid;
+  gap: 8px;
+  color: #859399;
+  font-size: 0.78rem;
+}
+
+.history-log-block ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 10px 10px 28px;
+  background: #0b1326;
+  border: 1px solid #3c494e;
+  border-radius: 8px;
+  color: #bbc9cf;
+  line-height: 1.4;
+}
+
+.history-log-block p {
+  color: #859399;
 }
 
 .settings-panel {
