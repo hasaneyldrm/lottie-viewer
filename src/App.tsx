@@ -16,7 +16,7 @@ type LottieData = Record<string, unknown> & {
 type AssetStatus = 'ready' | 'error'
 type AssetTab = 'all' | 'ready' | 'error'
 type SortMode = 'featured' | 'newest' | 'oldest' | 'largest' | 'smallest' | 'name'
-type AiProvider = 'fal' | 'wiro'
+type AiProvider = 'smart' | 'fal' | 'wiro'
 
 type AssetRecord = {
   id: string
@@ -148,6 +148,51 @@ function previewPayload(value: unknown) {
   } catch {
     return String(value).slice(0, 5000)
   }
+}
+
+function colorFromPrompt(prompt: string) {
+  const normalized = prompt.toLowerCase()
+  const colors: Array<{ keys: string[]; value: [number, number, number] }> = [
+    { keys: ['turuncu', 'orange'], value: [1, 0.48, 0.05] },
+    { keys: ['kirmizi', 'kırmızı', 'red'], value: [1, 0.12, 0.12] },
+    { keys: ['mavi', 'blue'], value: [0.12, 0.48, 1] },
+    { keys: ['yesil', 'yeşil', 'green'], value: [0.1, 0.72, 0.32] },
+    { keys: ['sari', 'sarı', 'yellow'], value: [1, 0.82, 0.08] },
+    { keys: ['mor', 'purple'], value: [0.58, 0.18, 1] },
+    { keys: ['pembe', 'pink'], value: [1, 0.28, 0.62] },
+    { keys: ['beyaz', 'white'], value: [1, 1, 1] },
+    { keys: ['siyah', 'black'], value: [0, 0, 0] },
+  ]
+
+  return colors.find((color) => color.keys.some((key) => normalized.includes(key)))?.value ?? null
+}
+
+function applyFlatColor(data: LottieData, color: [number, number, number]) {
+  let changed = 0
+
+  const visit = (value: unknown, parentKey?: string): unknown => {
+    if (Array.isArray(value)) {
+      if (
+        parentKey === 'k' &&
+        (value.length === 3 || value.length === 4) &&
+        value.every((item) => typeof item === 'number' && item >= 0 && item <= 1)
+      ) {
+        changed += 1
+        return value.length === 4 ? [...color, value[3]] : [...color]
+      }
+
+      return value.map((item) => visit(item))
+    }
+
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, visit(item, key)]))
+    }
+
+    return value
+  }
+
+  const next = visit(data) as LottieData
+  return { data: next, changed }
 }
 
 function isLottieData(value: unknown): value is LottieData {
@@ -410,9 +455,9 @@ function App() {
   const [falKey, setFalKey] = useState(() => sessionStorage.getItem('bulk-lottie-viewer:fal-key') ?? '')
   const [wiroKey, setWiroKey] = useState(() => sessionStorage.getItem('bulk-lottie-viewer:wiro-key') ?? '')
   const [wiroModel, setWiroModel] = useState(() => sessionStorage.getItem('bulk-lottie-viewer:wiro-model') ?? 'openai/gpt-5.5')
-  const [aiProvider, setAiProvider] = useState<AiProvider>('fal')
+  const [aiProvider, setAiProvider] = useState<AiProvider>('smart')
   const [aiPrompt, setAiPrompt] = useState('Make this animation cleaner, smoother, and more premium while keeping the same idea.')
-  const [aiBusy, setAiBusy] = useState(false)
+  const [aiRunningCount, setAiRunningCount] = useState(0)
   const [aiMessage, setAiMessage] = useState('AI edits create a new Lottie file in this browser session.')
   const [aiHistory, setAiHistory] = useState<AiHistoryItem[]>([])
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false)
@@ -573,6 +618,7 @@ function App() {
   const detailsAsset = activeAsset ?? filteredAssets[0] ?? null
   const totalSize = assets.reduce((sum, asset) => sum + asset.size, 0)
   const activeHistory = aiHistory.find((item) => item.id === activeHistoryId) ?? aiHistory[0] ?? null
+  const aiBusy = aiRunningCount > 0
 
   useEffect(() => {
     if (!detailOpen) return
@@ -901,18 +947,56 @@ function App() {
       return
     }
 
-    setAiBusy(true)
-    setAiMessage(aiProvider === 'fal' ? 'Fal Omnilottie is generating...' : 'Wiro is editing JSON...')
+    setAiRunningCount((count) => count + 1)
+    setAiMessage(
+      aiProvider === 'smart'
+        ? 'Smart edit is patching JSON locally...'
+        : aiProvider === 'fal'
+          ? 'Fal Omnilottie is generating...'
+          : 'Wiro is editing JSON...',
+    )
     const historyId = addAiHistory({
       provider: aiProvider,
       prompt,
       status: 'running',
-      message: aiProvider === 'fal' ? 'Starting fal.ai Omnilottie request...' : 'Starting Wiro request...',
+      message:
+        aiProvider === 'smart'
+          ? 'Starting local smart edit...'
+          : aiProvider === 'fal'
+            ? 'Starting fal.ai Omnilottie request...'
+            : 'Starting Wiro request...',
       logs: ['Request created in browser session.'],
     })
 
     try {
       const sourceName = asset?.name ? safeFileName(asset.name) : 'prompt'
+      if (aiProvider === 'smart') {
+        if (!asset?.data) {
+          throw new Error('Select a valid Lottie before using Smart edit.')
+        }
+
+        const color = colorFromPrompt(prompt)
+        if (!color) {
+          throw new Error('Smart edit currently handles direct color edits. Try "make it orange" or switch to Wiro/fal.ai.')
+        }
+
+        const result = applyFlatColor(asset.data, color)
+        if (!result.changed) {
+          throw new Error('No editable Lottie color values were found in this file.')
+        }
+
+        const name = `${sourceName}-smart-edit-${Date.now()}.json`
+        addGeneratedAsset(name, result.data)
+        updateAiHistory(historyId, {
+          assetName: name,
+          status: 'success',
+          message: `Updated ${result.changed} color values locally.`,
+          rawOutput: previewPayload(result.data),
+          logs: [`Detected color edit intent.`, `Updated ${result.changed} color values.`, `Added asset: ${name}`],
+        })
+        return
+      }
+
       const strongerPrompt =
         aiProvider === 'fal'
           ? [
@@ -950,7 +1034,7 @@ function App() {
         logs: ['Request failed.', message],
       })
     } finally {
-      setAiBusy(false)
+      setAiRunningCount((count) => Math.max(0, count - 1))
     }
   }
 
@@ -1338,6 +1422,13 @@ function App() {
                   <div className="provider-toggle" role="tablist" aria-label="AI provider">
                     <button
                       type="button"
+                      className={aiProvider === 'smart' ? 'is-active' : ''}
+                      onClick={() => setAiProvider('smart')}
+                    >
+                      Smart
+                    </button>
+                    <button
+                      type="button"
                       className={aiProvider === 'fal' ? 'is-active' : ''}
                       onClick={() => setAiProvider('fal')}
                     >
@@ -1362,10 +1453,10 @@ function App() {
                     type="button"
                     className="primary-action modal-action"
                     onClick={() => runAiEdit(detailsAsset)}
-                    disabled={aiBusy}
                   >
-                    {aiBusy ? 'Editing...' : aiProvider === 'fal' ? 'Generate Lottie' : 'Edit with Wiro'}
+                    {aiProvider === 'smart' ? 'Apply Smart Edit' : aiProvider === 'fal' ? 'Generate Lottie' : 'Edit with Wiro'}
                   </button>
+                  {aiBusy ? <p className="ai-message">{aiRunningCount} AI run active in history.</p> : null}
                   <p className="privacy-note">
                     No data is stored by this app. Keys stay in sessionStorage. AI requests are sent only when you run an edit.
                   </p>
@@ -1438,7 +1529,14 @@ function App() {
           {activeHistory ? (
             <div className="history-detail">
               <span className={`history-status ${activeHistory.status}`}>{activeHistory.status}</span>
-              <h3>{activeHistory.assetName ?? 'AI run failed'}</h3>
+              <h3>
+                {activeHistory.assetName ??
+                  (activeHistory.status === 'running'
+                    ? 'AI run in progress'
+                    : activeHistory.status === 'error'
+                      ? 'AI run failed'
+                      : 'AI run complete')}
+              </h3>
               <p>{activeHistory.message}</p>
               <label>
                 <span>Prompt</span>
