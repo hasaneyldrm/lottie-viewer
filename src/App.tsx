@@ -798,10 +798,15 @@ function App() {
       ? `/api/wiro/v1/Run/${modelPath}`
       : `https://api.wiro.ai/v1/Run/${modelPath}`
 
+    const trimmedWiroKey = wiroKey.trim()
+    const authHeaders: Record<string, string> = trimmedWiroKey.includes(':')
+      ? { Authorization: `Bearer ${trimmedWiroKey}` }
+      : { 'x-api-key': trimmedWiroKey }
+
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${wiroKey.trim()}`,
+        ...authHeaders,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(request),
@@ -809,7 +814,11 @@ function App() {
 
     if (!response.ok) {
       const errorText = await response.text()
-      throw new Error(`Wiro request failed: ${response.status} ${errorText.slice(0, 180)}`)
+      const authHint =
+        response.status === 401
+          ? ' Use a plain API key, or API_KEY:API_SECRET if your Wiro project uses signature auth.'
+          : ''
+      throw new Error(`Wiro request failed: ${response.status} ${errorText.slice(0, 180)}${authHint}`)
     }
 
     const payload = await response.json()
@@ -970,12 +979,12 @@ function App() {
                 />
               </label>
 
-              <label className="settings-field">
-                <span>Wiro API key</span>
+            <label className="settings-field">
+                <span>Wiro API key or key:secret</span>
                 <input
                   type="password"
                   value={wiroKey}
-                  placeholder="wiro key"
+                  placeholder="wiro key or key:secret"
                   onChange={(event) => setWiroKey(event.target.value)}
                 />
               </label>
